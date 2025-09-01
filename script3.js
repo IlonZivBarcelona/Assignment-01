@@ -6,46 +6,34 @@ let originalUserSnapshot = null;
 const modalEl = document.getElementById("userModal");
 const bsModal = () => bootstrap.Modal.getOrCreateInstance(modalEl);
 
-function deepCopy(obj) {
-  return JSON.parse(JSON.stringify(obj));
-}
+const deepCopy = obj => JSON.parse(JSON.stringify(obj));
 
 document.getElementById("generateBtn").addEventListener("click", fetchUsers);
 
-modalEl.addEventListener("hide.bs.modal", function (e) {
+// ---------------- Modal Lifecycle ----------------
+modalEl.addEventListener("hide.bs.modal", e => {
   const editModeEl = document.getElementById("editMode");
   if (!editModeEl) return;
 
   const inEditMode = editModeEl.style.display !== "none";
-  if (!inEditMode) return; 
-  if (!originalUserSnapshot || currentUserIndex === null || typeof users[currentUserIndex] === "undefined") {
-    return;
-  }
+  if (!inEditMode || !originalUserSnapshot || currentUserIndex === null || !users[currentUserIndex]) return;
 
   if (isFormDirty()) {
-    const wantSave = confirm("You have unsaved changes. Click OK to SAVE changes, Cancel to choose between DISCARD or KEEP editing.");
-    if (wantSave) {
-      saveUser(false);
-      return;
-    } else {
-      const discard = confirm("Click OK to DISCARD changes and close, Cancel to keep editing.");
-      if (discard) {
-        users[currentUserIndex] = deepCopy(originalUserSnapshot);
-        renderTable();
-        return;
-      } else {
-        e.preventDefault(); // stops modal from closing
-        return;
-      }
-    }
+    confirm("You have unsaved changes. OK = SAVE, Cancel = choose DISCARD or KEEP editing")
+      ? saveUser(false)
+      : confirm("OK = DISCARD changes, Cancel = KEEP editing")
+        ? (users[currentUserIndex] = deepCopy(originalUserSnapshot), renderTable())
+        : e.preventDefault();
   }
 });
-modalEl.addEventListener("hidden.bs.modal", function () {
-  document.getElementById("editMode").style.display = "none";
-  document.getElementById("viewMode").style.display = "block";
+
+modalEl.addEventListener("hidden.bs.modal", () => {
+  toggleEditMode(false);
   currentUserIndex = null;
   originalUserSnapshot = null;
 });
+
+// ---------------- Fetch Users ----------------
 function fetchUsers() {
   const countStr = document.getElementById("userCount").value;
   const count = parseInt(countStr, 10);
@@ -55,108 +43,97 @@ function fetchUsers() {
   errorDiv.textContent = "";
   table.innerHTML = "";
 
-  if (!countStr || isNaN(count) || (count <= 0 || count > 1000 )) {
-      errorDiv.textContent = "Please enter a number between 0 and 1000.";
-      return;
+  if (!countStr || isNaN(count) || count <= 0 || count > 1000) {
+    errorDiv.textContent = "Please enter a number between 0 and 1000.";
+    return;
   }
 
-  fetch("https://randomuser.me/api/?results=" + count)
-      .then(res => {
-          if (!res.ok) throw new Error("Network response was not ok");
-          return res.json();
-      })
-      .then(data => {
-          users = data.results;
-          renderTable();
-      })
-      .catch(err => errorDiv.textContent = "Error fetching users: " + err.message);
+  fetch(`https://randomuser.me/api/?results=${count}`)
+    .then(res => res.ok ? res.json() : Promise.reject(new Error("Network response was not ok")))
+    .then(data => (users = data.results, renderTable()))
+    .catch(err => errorDiv.textContent = `Error fetching users: ${err.message}`);
 }
 
-// --- Render table ---
+// ---------------- Render Table ----------------
 function renderTable() {
   const table = document.getElementById("userTable");
   table.innerHTML = "";
-  const headerRow = document.createElement("tr");
 
+  const headerRow = document.createElement("tr");
   const nameHeader = document.createElement("th");
   const select = document.createElement("select");
+
   select.className = "form-select form-select-sm";
   select.style.width = "auto";
   select.add(new Option("First Name", "first"));
   select.add(new Option("Last Name", "last"));
   select.value = showFirstName ? "first" : "last";
-  select.onchange = function() {
-      showFirstName = select.value === "first";
-      renderTable();
-  };
+  select.onchange = () => (showFirstName = select.value === "first", renderTable());
+
   nameHeader.appendChild(select);
   headerRow.appendChild(nameHeader);
 
   ["Gender", "Email Address", "Country"].forEach(text => {
-      const th = document.createElement("th");
-      th.textContent = text;
-      headerRow.appendChild(th);
+    const th = document.createElement("th");
+    th.textContent = text;
+    headerRow.appendChild(th);
   });
 
   table.appendChild(headerRow);
 
   users.forEach((user, index) => {
-      const row = document.createElement("tr");
-      row.style.cursor = "pointer";
+    const row = document.createElement("tr");
+    row.style.cursor = "pointer";
 
-      const nameCell = document.createElement("td");
-      nameCell.textContent = showFirstName ? user.name.first : user.name.last;
-      row.appendChild(nameCell);
+    const nameCell = document.createElement("td");
+    nameCell.textContent = showFirstName ? user.name.first : user.name.last;
+    row.appendChild(nameCell);
 
-      const genderCell = document.createElement("td");
-      genderCell.textContent = user.gender;
-      row.appendChild(genderCell);
+    ["gender", "email", "location.country"].forEach(key => {
+      const td = document.createElement("td");
+      td.textContent = key.includes(".") ? user.location.country : user[key];
+      row.appendChild(td);
+    });
 
-      const emailCell = document.createElement("td");
-      emailCell.textContent = user.email;
-      row.appendChild(emailCell);
-
-      const countryCell = document.createElement("td");
-      countryCell.textContent = user.location.country;
-      row.appendChild(countryCell);
-
-      row.ondblclick = () => openUserModal(index);
-      table.appendChild(row);
+    row.ondblclick = () => openUserModal(index);
+    table.appendChild(row);
   });
 }
+
+// ---------------- Modal Data ----------------
 function openUserModal(index) {
-  if (typeof users[index] === "undefined") return;
+  if (!users[index]) return;
 
   currentUserIndex = index;
-  originalUserSnapshot = deepCopy(users[index]); // snapshot
+  originalUserSnapshot = deepCopy(users[index]);
 
   const user = users[index];
   document.getElementById("modalPicture").src = user.picture.large || "";
   document.getElementById("modalName").textContent = `${user.name.title} ${user.name.first} ${user.name.last}`;
-  document.getElementById("modalAddress").textContent = `${user.location.street.number} ${user.location.street.name}, ${user.location.city}, ${user.location.state}, ${user.location.country}, ${user.location.postcode || ""}`;
+  document.getElementById("modalAddress").textContent =
+    `${user.location.street.number} ${user.location.street.name}, ${user.location.city}, ${user.location.state}, ${user.location.country}, ${user.location.postcode || ""}`;
   document.getElementById("modalEmail").textContent = user.email;
   document.getElementById("modalPhone").textContent = `Phone: ${user.phone} • Cell: ${user.cell}`;
   document.getElementById("modalDob").textContent = new Date(user.dob.date).toLocaleDateString();
   document.getElementById("modalGender").textContent = user.gender;
-  document.getElementById("viewMode").style.display = "block";
-  document.getElementById("editMode").style.display = "none";
 
+  toggleEditMode(false);
   bsModal().show();
 }
-// Delete user (from view mode) 
+
+// ---------------- Delete User ----------------
 document.getElementById("deleteUser").addEventListener("click", () => {
   if (currentUserIndex === null) return;
-  const ok = confirm("Are you sure you want to delete this user?");
-  if (!ok) return;
-  users.splice(currentUserIndex, 1);
-  const instance = bsModal();
-  originalUserSnapshot = null;
-  currentUserIndex = null;
-  renderTable();
-  instance.hide();
+  confirm("Are you sure you want to delete this user?") && (
+    users.splice(currentUserIndex, 1),
+    renderTable(),
+    bsModal().hide(),
+    currentUserIndex = null,
+    originalUserSnapshot = null
+  );
 });
 
-// Edit User 
+// ---------------- Edit User (Promise) ----------------
 function editUserPromise(user) {
   return new Promise((resolve, reject) => {
     // preload form values
@@ -164,15 +141,13 @@ function editUserPromise(user) {
     document.getElementById("editLast").value = user.name.last || "";
     document.getElementById("editGender").value = user.gender || "male";
     document.getElementById("editEmail").value = user.email || "";
-    document.getElementById("editAddress").value = `${user.location.street.number} ${user.location.street.name}, ${user.location.city}, ${user.location.state}` || "";
+    document.getElementById("editAddress").value =
+      `${user.location.street.number} ${user.location.street.name}, ${user.location.city}, ${user.location.state}` || "";
     document.getElementById("editCountry").value = user.location.country || "";
 
-// show edit mode
-    document.getElementById("viewMode").style.display = "none";
-    document.getElementById("editMode").style.display = "block";
+    toggleEditMode(true);
 
-// save handler
-    function handleSave(e) {
+    const handleSave = e => {
       e.preventDefault();
       user.name.first = document.getElementById("editFirst").value.trim();
       user.name.last = document.getElementById("editLast").value.trim();
@@ -180,49 +155,39 @@ function editUserPromise(user) {
       user.email = document.getElementById("editEmail").value.trim();
       user.location.street.name = document.getElementById("editAddress").value.trim();
       user.location.country = document.getElementById("editCountry").value.trim();
+      cleanup(); resolve(user);
+    };
 
-      cleanup();
-      resolve(user);
-    }
+    const handleCancel = () => (cleanup(), reject("cancel"));
+    const handleClose = () => (cleanup(), reject("close"));
 
-// cancel handler
-    function handleCancel() {
-      cleanup();
-      reject("cancel");
-    }
-
-// modal closed without saving
-    function handleClose() {
-      cleanup();
-      reject("close");
-    }
-
-    function cleanup() {
+    const cleanup = () => {
       document.getElementById("editForm").removeEventListener("submit", handleSave);
       document.getElementById("cancelEdit").removeEventListener("click", handleCancel);
       modalEl.removeEventListener("hidden.bs.modal", handleClose);
+      toggleEditMode(false);
+    };
 
-      // restore UI state
-      document.getElementById("editMode").style.display = "none";
-      document.getElementById("viewMode").style.display = "block";
-    }
-
-    // attach listeners
     document.getElementById("editForm").addEventListener("submit", handleSave);
     document.getElementById("cancelEdit").addEventListener("click", handleCancel);
     modalEl.addEventListener("hidden.bs.modal", handleClose);
   });
 }
 
-// --- Hook up Edit button ---
+// ---------------- Hook Edit Button ----------------
 document.getElementById("editUser").addEventListener("click", async () => {
   if (currentUserIndex === null) return;
-  const user = users[currentUserIndex];
   try {
-    await editUserPromise(user);
+    await editUserPromise(users[currentUserIndex]);
     renderTable();
-    openUserModal(currentUserIndex); // reopen in view mode with updated data
+    openUserModal(currentUserIndex);
   } catch (err) {
-    console.log("Edit dismissed:", err); // either "cancel" or "close"
+    console.log("Edit dismissed:", err);
   }
 });
+
+// ---------------- Helpers ----------------
+function toggleEditMode(editing) {
+  document.getElementById("editMode").style.display = editing ? "block" : "none";
+  document.getElementById("viewMode").style.display = editing ? "none" : "block";
+}
