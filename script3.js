@@ -10,30 +10,40 @@ const deepCopy = obj => JSON.parse(JSON.stringify(obj));
 
 document.getElementById("generateBtn").addEventListener("click", fetchUsers);
 
-// ---------------- Modal Lifecycle ----------------
-modalEl.addEventListener("hide.bs.modal", e => {
-  const editModeEl = document.getElementById("editMode");
-  if (!editModeEl) return;
+// Save user 
+function saveUser(reopen = true) {
+  return new Promise((resolve, reject) => {
+    if (currentUserIndex === null) return reject("no-user");
 
-  const inEditMode = editModeEl.style.display !== "none";
-  if (!inEditMode || !originalUserSnapshot || currentUserIndex === null || !users[currentUserIndex]) return;
+    const user = users[currentUserIndex];
+    try {
+      user.name.first = document.getElementById("editFirst").value.trim();
+      user.name.last = document.getElementById("editLast").value.trim();
+      user.gender = document.getElementById("editGender").value;
+      user.email = document.getElementById("editEmail").value.trim();
+      user.location.street.name = document.getElementById("editAddress").value.trim();
+      user.location.country = document.getElementById("editCountry").value.trim();
 
-  if (isFormDirty()) {
-    confirm("You have unsaved changes. OK = SAVE, Cancel = choose DISCARD or KEEP editing")
-      ? saveUser(false)
-      : confirm("OK = DISCARD changes, Cancel = KEEP editing")
-        ? (users[currentUserIndex] = deepCopy(originalUserSnapshot), renderTable())
-        : e.preventDefault();
-  }
-});
+      renderTable();
+      if (reopen) openUserModal(currentUserIndex);
 
+      originalUserSnapshot = deepCopy(user);
+
+      resolve(user);
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
+// Reset modal state after close
 modalEl.addEventListener("hidden.bs.modal", () => {
   toggleEditMode(false);
   currentUserIndex = null;
   originalUserSnapshot = null;
 });
 
-// ---------------- Fetch Users ----------------
+// Fetch users
 function fetchUsers() {
   const countStr = document.getElementById("userCount").value;
   const count = parseInt(countStr, 10);
@@ -54,7 +64,7 @@ function fetchUsers() {
     .catch(err => errorDiv.textContent = `Error fetching users: ${err.message}`);
 }
 
-// ---------------- Render Table ----------------
+// Render table
 function renderTable() {
   const table = document.getElementById("userTable");
   table.innerHTML = "";
@@ -100,7 +110,7 @@ function renderTable() {
   });
 }
 
-// ---------------- Modal Data ----------------
+// Fill modal with user data
 function openUserModal(index) {
   if (!users[index]) return;
 
@@ -121,7 +131,7 @@ function openUserModal(index) {
   bsModal().show();
 }
 
-// ---------------- Delete User ----------------
+// Delete user
 document.getElementById("deleteUser").addEventListener("click", () => {
   if (currentUserIndex === null) return;
   confirm("Are you sure you want to delete this user?") && (
@@ -133,10 +143,9 @@ document.getElementById("deleteUser").addEventListener("click", () => {
   );
 });
 
-// ---------------- Edit User (Promise) ----------------
+// Edit user
 function editUserPromise(user) {
   return new Promise((resolve, reject) => {
-    // preload form values
     document.getElementById("editFirst").value = user.name.first || "";
     document.getElementById("editLast").value = user.name.last || "";
     document.getElementById("editGender").value = user.gender || "male";
@@ -147,15 +156,16 @@ function editUserPromise(user) {
 
     toggleEditMode(true);
 
-    const handleSave = e => {
+    const handleSave = async e => {
       e.preventDefault();
-      user.name.first = document.getElementById("editFirst").value.trim();
-      user.name.last = document.getElementById("editLast").value.trim();
-      user.gender = document.getElementById("editGender").value;
-      user.email = document.getElementById("editEmail").value.trim();
-      user.location.street.name = document.getElementById("editAddress").value.trim();
-      user.location.country = document.getElementById("editCountry").value.trim();
-      cleanup(); resolve(user);
+      try {
+        const updatedUser = await saveUser();
+        cleanup();
+        resolve(updatedUser);
+      } catch (err) {
+        cleanup();
+        reject(err);
+      }
     };
 
     const handleCancel = () => (cleanup(), reject("cancel"));
@@ -174,7 +184,7 @@ function editUserPromise(user) {
   });
 }
 
-// ---------------- Hook Edit Button ----------------
+// Edit Button
 document.getElementById("editUser").addEventListener("click", async () => {
   if (currentUserIndex === null) return;
   try {
@@ -186,7 +196,7 @@ document.getElementById("editUser").addEventListener("click", async () => {
   }
 });
 
-// ---------------- Helpers ----------------
+// Helpers
 function toggleEditMode(editing) {
   document.getElementById("editMode").style.display = editing ? "block" : "none";
   document.getElementById("viewMode").style.display = editing ? "none" : "block";
